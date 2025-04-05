@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Hourly AQI Plot</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <h2>Select a Date:</h2>
+    <input type="date" id="datePicker">
+    <button onclick="fetchAQIData()">Show AQI</button>
+
+    <canvas id="aqiChart" width="800" height="400"></canvas>
+
+    <script>
+        let chart;
+
+        function fetchAQIData() {
+            const selectedDate = document.getElementById("datePicker").value;
+            if (!selectedDate) {
+                alert("Please select a date!");
+                return;
+            }
+
+            fetch(`/get_hourly_aqi?date=${selectedDate}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        alert(data.error);
+                        return;
+                    }
+
+                    drawChart(data.hours, data.aqi_values);
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        function drawChart(labels, data) {
+            const ctx = document.getElementById('aqiChart').getContext('2d');
+
+            if (chart) {
+                chart.destroy();
+            }
+
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels.map(h => `${h}:00`),
+                    datasets: [{
+                        label: 'Hourly AQI',
+                        data: data,
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        borderWidth: 2,
+                        fill: false
+                    }]
+                },
+                options: {
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Hour of Day'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Air Quality Index'
+                            },
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
