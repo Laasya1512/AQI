@@ -2,19 +2,155 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Hourly AQI Plot</title>
+    <title>AQI Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+
+    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .section {
+            margin-bottom: 50px;
+        }
+
+        #map {
+            height: 400px;
+            width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        #cityButtons button {
+            margin: 5px;
+            padding: 8px 12px;
+        }
+
+        #searchCity {
+            width: 220px;
+            padding: 6px;
+            margin-bottom: 10px;
+        }
+
+        #aqiChart {
+            max-width: 100%;
+            height: auto;
+        }
+
+        .legend-box {
+            margin-top: 20px;
+        }
+
+        .legend-box ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .legend-box li {
+            margin: 6px 0;
+        }
+
+        .legend-color {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+    </style>
 </head>
 <body>
-    <h2>Select a Date:</h2>
-    <input type="date" id="datePicker">
-    <button onclick="fetchAQIData()">Show AQI</button>
 
-    <canvas id="aqiChart" width="800" height="400"></canvas>
+    <h1>India AQI Dashboard</h1>
+
+    <!-- 🌍 Map Section -->
+    <div class="section">
+        <h2>AQI Map</h2>
+        <input type="text" id="searchCity" placeholder="Search cities..." oninput="searchCity(this.value)">
+        <div id="map"></div>
+        <div id="cityButtons">
+            <button onclick="goToCity('Delhi')">Delhi</button>
+            <button onclick="goToCity('Mumbai')">Mumbai</button>
+            <button onclick="goToCity('Bangalore')">Bangalore</button>
+            <button onclick="goToCity('Chennai')">Chennai</button>
+            <button onclick="goToCity('Kolkata')">Kolkata</button>
+            <button onclick="goToCity('Pune')">Pune</button>
+        </div>
+    </div>
+
+    <!-- 📈 Graph Section -->
+    <div class="section">
+        <h2>Daily AQI Chart</h2>
+        <input type="date" id="datePicker">
+        <button onclick="fetchAQIData()">Show AQI</button>
+        <canvas id="aqiChart"></canvas>
+
+        <!-- AQI Legend -->
+        <div class="legend-box">
+            <h3>AQI Color Indicator</h3>
+            <ul>
+                <li><span class="legend-color" style="background: green;"></span>Good (0-50): Satisfactory</li>
+                <li><span class="legend-color" style="background: yellow;"></span>Moderate (51-100): Acceptable</li>
+                <li><span class="legend-color" style="background: orange;"></span>Unhealthy for Sensitive Groups (101-150)</li>
+                <li><span class="legend-color" style="background: red;"></span>Unhealthy (151-200)</li>
+                <li><span class="legend-color" style="background: purple;"></span>Very Unhealthy (201-300)</li>
+                <li><span class="legend-color" style="background: maroon;"></span>Hazardous (301+)</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- JS Libraries -->
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
     <script>
-        let chart;
+        // 🌍 MAP LOGIC
+        const cities = {
+            "Delhi": [28.6139, 77.2090],
+            "Mumbai": [19.0760, 72.8777],
+            "Bangalore": [12.9716, 77.5946],
+            "Chennai": [13.0827, 80.2707],
+            "Kolkata": [22.5726, 88.3639],
+            "Pune": [18.5204, 73.8567]
+        };
 
+        const map = L.map('map').setView([22.9734, 78.6569], 5);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        const markers = {};
+        for (const city in cities) {
+            markers[city] = L.marker(cities[city]).addTo(map).bindPopup(city);
+        }
+
+        function goToCity(cityName) {
+            const coords = cities[cityName];
+            if (coords) {
+                map.setView(coords, 10);
+                markers[cityName].openPopup();
+            }
+        }
+
+        function searchCity(query) {
+            const cityName = Object.keys(cities).find(city => city.toLowerCase().startsWith(query.toLowerCase()));
+            if (cityName) {
+                goToCity(cityName);
+            }
+        }
+
+        // 📈 AQI CHART LOGIC
+        let chart;
         function fetchAQIData() {
             const selectedDate = document.getElementById("datePicker").value;
             if (!selectedDate) {
@@ -29,7 +165,6 @@
                         alert(data.error);
                         return;
                     }
-
                     drawChart(data.hours, data.aqi_values);
                 })
                 .catch(error => console.error('Error:', error));
@@ -37,10 +172,16 @@
 
         function drawChart(labels, data) {
             const ctx = document.getElementById('aqiChart').getContext('2d');
+            if (chart) chart.destroy();
 
-            if (chart) {
-                chart.destroy();
-            }
+            const getColor = (aqi) => {
+                if (aqi <= 50) return 'green';
+                if (aqi <= 100) return 'yellow';
+                if (aqi <= 150) return 'orange';
+                if (aqi <= 200) return 'red';
+                if (aqi <= 300) return 'purple';
+                return 'maroon';
+            };
 
             chart = new Chart(ctx, {
                 type: 'line',
@@ -49,24 +190,26 @@
                     datasets: [{
                         label: 'Hourly AQI',
                         data: data,
-                        borderColor: 'rgba(255, 99, 132, 1)',
+                        segment: {
+                            borderColor: ctx => getColor(data[ctx.p0DataIndex])
+                        },
                         borderWidth: 2,
+                        pointRadius: 3,
                         fill: false
                     }]
                 },
                 options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { display: true },
+                        tooltip: { mode: 'index', intersect: false }
+                    },
                     scales: {
                         x: {
-                            title: {
-                                display: true,
-                                text: 'Hour of Day'
-                            }
+                            title: { display: true, text: 'Hour' }
                         },
                         y: {
-                            title: {
-                                display: true,
-                                text: 'Air Quality Index'
-                            },
+                            title: { display: true, text: 'AQI' },
                             beginAtZero: true
                         }
                     }
