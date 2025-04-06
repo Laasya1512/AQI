@@ -1,0 +1,508 @@
+//app.py
+
+from flask import Flask, request, jsonify, render_template
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from scipy import stats
+import os
+
+app = Flask(__name__)
+
+def preprocess_data():
+    file_path = 'data1.csv'
+    if not os.path.exists(file_path):
+        raise FileNotFoundError("The dataset file 'data1.csv' was not found.")
+
+    data = pd.read_csv(file_path)
+
+    # Replace -1 with NaN
+    data.replace(-1, np.nan, inplace=True)
+
+    # Fill categorical NaNs with mode
+    categorical_cols = data.select_dtypes(include=['object']).columns
+    for col in categorical_cols:
+        if data[col].isnull().any():
+            data[col].fillna(data[col].mode()[0], inplace=True)
+
+    # Convert datetime column
+    data["observationDateTime"] = pd.to_datetime(data["observationDateTime"], errors='coerce')
+    data.dropna(subset=["observationDateTime"], inplace=True)
+
+    # Fill numeric NaNs with median
+    numeric_cols = data.select_dtypes(include=['int64', 'float64']).columns
+    for col in numeric_cols:
+        if data[col].isnull().any():
+            data[col].fillna(data[col].median(), inplace=True)
+
+    # Parameters to exclude from scaling and outlier removal
+    untouched_cols = [
+        'airQualityIndex',
+        'pm2p5.avgOverTime',
+        'pm10.avgOverTime',
+        'co.avgOverTime',
+        'no2.avgOverTime',
+        'so2.avgOverTime'
+    ]
+
+    # Columns to normalize and standardize
+    cols_to_scale = [col for col in numeric_cols if col not in untouched_cols]
+
+    # Normalize and standardize selected numeric columns
+    scaler = MinMaxScaler()
+    standardizer = StandardScaler()
+    scaled_data = scaler.fit_transform(data[cols_to_scale])
+    standardized_data = standardizer.fit_transform(scaled_data)
+    data[cols_to_scale] = pd.DataFrame(standardized_data, columns=cols_to_scale)
+
+    # Remove outliers only from scaled data columns
+    z_scores = np.abs(stats.zscore(data[cols_to_scale]))
+    data = data[(z_scores < 3).all(axis=1)]
+
+    return data
+
+
+# Preprocess once at server startup
+processed_data = preprocess_data()
+
+@app.route('/')
+def home():
+    return render_template('index.html')  # Ensure templates/index.html exists
+
+@app.route('/aqi-data')
+def aqi_data():
+    try:
+        df = processed_data.copy()
+        df['date'] = pd.to_datetime(df['observationDateTime']).dt.date
+        daily_avg = df.groupby('date')['airQualityIndex'].mean().reset_index()
+
+        if daily_avg.empty:
+            return jsonify({'error': 'No daily data found'}), 404
+
+        data = {
+            'labels': daily_avg['date'].astype(str).tolist(),
+            'values': daily_avg['airQualityIndex'].round(2).tolist()
+        }
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': f'An error occurred in /aqi-data: {str(e)}'}), 500
+
+@app.route('/get_hourly_aqi', methods=['GET'])
+def get_hourly_aqi():
+    selected_date = request.args.get('date')
+    if not selected_date:
+        return jsonify({'error': 'No date provided'}), 400
+
+    try:
+        selected_datetime = pd.to_datetime(selected_date).date()
+        filtered_data = processed_data[
+            processed_data['observationDateTime'].dt.date == selected_datetime
+        ]
+
+        if filtered_data.empty:
+            return jsonify({'error': f'No data available for {selected_date}'}), 404
+
+        filtered_data = filtered_data.copy()
+        filtered_data['hour'] = filtered_data['observationDateTime'].dt.hour
+        hourly_data = filtered_data.groupby('hour')['airQualityIndex'].mean().reset_index()
+
+        response = {
+            'hours': hourly_data['hour'].tolist(),
+            'aqi_values': hourly_data['airQualityIndex'].round(2).tolist()
+        }
+        return jsonify(response)
+
+    except Exception as e:
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+@app.route('/parameter-data/<date_str>')
+def parameter_data(date_str):
+    try:
+        df = processed_data.copy()
+        df['date'] = pd.to_datetime(df['observationDateTime']).dt.date
+
+        selected_date = pd.to_datetime(date_str).date()
+        df = df[df['date'] == selected_date]
+
+        df['hour'] = pd.to_datetime(df['observationDateTime']).dt.hour
+
+        parameters = [
+            'pm2p5.avgOverTime',
+            'pm10.avgOverTime',
+            'no2.avgOverTime',
+            'so2.avgOverTime',
+        ]
+
+        hourly_avg = df.groupby('hour')[parameters].mean().reset_index()
+        hourly_avg['hour'] = hourly_avg['hour'].astype(str)
+
+        return jsonify({
+            'labels': hourly_avg['hour'].tolist(),
+            'data': {param: hourly_avg[param].round(2).tolist() for param in parameters}
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+@app.route('/temperature-humidity/<date_str>')
+def temperature_humidity(date_str):
+    try:
+        df = processed_data.copy()
+        df['date'] = pd.to_datetime(df['observationDateTime']).dt.date
+        selected_date = pd.to_datetime(date_str).date()
+
+        # Filter for the given date
+        df = df[df['date'] == selected_date]
+
+        # Extract hour
+        df['hour'] = df['observationDateTime'].dt.hour
+
+        # Columns to use
+        parameters = [
+            'airTemperature.avgOverTime',
+            'relativeHumidity.avgOverTime'
+        ]
+
+        hourly_avg = df.groupby('hour')[parameters].mean().reset_index()
+        hourly_avg['hour'] = hourly_avg['hour'].astype(str)
+
+        return jsonify({
+            'labels': hourly_avg['hour'].tolist(),
+            'temperature': hourly_avg['airTemperature.avgOverTime'].round(2).tolist(),
+            'humidity': hourly_avg['relativeHumidity.avgOverTime'].round(2).tolist()
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5001)
+
+
+//index.html
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Hourly AQI Plot</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  </head>
+  <body class="bg-gray-100 min-h-screen p-4">
+    <div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Left Panel -->
+      <div class="flex flex-col gap-6">
+        <div id="map" class="rounded-2xl shadow h-80"></div>
+
+        <div class="bg-white rounded-2xl shadow p-6">
+          <h2 class="text-xl font-bold text-gray-800 mb-4">AQI Filters</h2>
+
+          <div class="flex flex-wrap gap-2 mb-4" id="cityButtons">
+            <script>
+              const cities = [
+                { name: "Pune", lat: 18.5204, lng: 73.8567 },
+                { name: "Delhi", lat: 28.6139, lng: 77.209 },
+                { name: "Mumbai", lat: 19.076, lng: 72.8777 },
+                { name: "Bengaluru", lat: 12.9716, lng: 77.5946 },
+                { name: "Chennai", lat: 13.0827, lng: 80.2707 },
+                { name: "Kolkata", lat: 22.5726, lng: 88.3639 },
+                { name: "Hyderabad", lat: 17.385, lng: 78.4867 },
+                { name: "Ahmedabad", lat: 23.0225, lng: 72.5714 },
+                { name: "Jaipur", lat: 26.9124, lng: 75.7873 },
+                { name: "Lucknow", lat: 26.8467, lng: 80.9462 },
+              ];
+              cities.forEach((city) => {
+                document.write(
+                  `<button onclick="selectCity('${city.name}', ${city.lat}, ${
+                    city.lng
+                  })" class="city-btn ${
+                    city.name === "Pune" ? "selected" : ""
+                  }">${city.name}</button>`
+                );
+              });
+            </script>
+          </div>
+
+          <p class="text-sm font-medium text-gray-700 mb-2">Select Year</p>
+          <div class="flex gap-2 flex-wrap mb-4" id="yearButtons">
+            <script>
+              const currentYear = new Date().getFullYear();
+              for (let y = 2022; y <= currentYear; y++) {
+                document.write(
+                  `<button onclick="selectYear(${y})" class="year-btn">${y}</button>`
+                );
+              }
+            </script>
+          </div>
+
+          <p class="text-sm font-medium text-gray-700 mb-2">Select Month</p>
+          <div class="flex flex-wrap gap-2 mb-4" id="monthButtons">
+            <script>
+              const months = [
+                "Jan",
+                "Feb",
+                "Mar",
+                "Apr",
+                "May",
+                "Jun",
+                "Jul",
+                "Aug",
+                "Sep",
+                "Oct",
+                "Nov",
+                "Dec",
+              ];
+              document.write(
+                months
+                  .map(
+                    (m, i) =>
+                      `<button onclick="selectMonth(${
+                        i + 1
+                      })" class="month-btn">${m}</button>`
+                  )
+                  .join("")
+              );
+            </script>
+          </div>
+
+          <p class="text-sm font-medium text-gray-700 mb-2">Select Day</p>
+          <div class="grid grid-cols-7 gap-1" id="dayButtons"></div>
+
+          <button
+            onclick="fetchAQIData()"
+            class="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-2 rounded-lg transition duration-200 shadow"
+          >
+            Show AQI
+          </button>
+        </div>
+      </div>
+
+      <!-- Right Panel -->
+      <div class="bg-white rounded-2xl shadow p-6">
+        <h2 class="text-2xl font-bold text-center text-gray-800 mb-6">
+          Hourly AQI Visualization
+        </h2>
+        <div class="relative w-full mb-10">
+          <canvas id="aqiChart" class="w-full h-64"></canvas>
+        </div>
+
+        <div class="relative w-full hidden" id="paramChartContainer">
+          <h2 class="text-xl font-bold text-gray-700 mb-2">
+            Pollutants on Selected Date
+          </h2>
+          <canvas id="parameterChart" class="w-full h-64"></canvas>
+        </div>
+      </div>
+    </div>
+    <style>
+      .year-btn,
+      .month-btn,
+      .day-btn,
+      .city-btn {
+        padding: 0.4rem 0.75rem;
+        border-radius: 0.5rem;
+        background-color: #e0f2fe;
+        color: #0369a1;
+        font-weight: 600;
+        transition: 0.2s;
+      }
+      .selected {
+        background-color: #2563eb !important;
+        color: white !important;
+      }
+    </style>
+
+    <script>
+      let selectedCity = "Pune";
+      let selectedYear = null;
+      let selectedMonth = null;
+      let selectedDay = null;
+      let chart, parameterChart, tempHumidityChart;
+
+      const map = L.map("map").setView([18.5204, 73.8567], 10);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution:
+          'Map data © <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
+      }).addTo(map);
+
+      function selectCity(city, lat, lng) {
+        selectedCity = city;
+        document
+          .querySelectorAll("#cityButtons button")
+          .forEach((btn) => btn.classList.remove("selected"));
+        event.target.classList.add("selected");
+        map.setView([lat, lng], 10);
+      }
+
+      function selectYear(year) {
+        selectedYear = year;
+        document
+          .querySelectorAll("#yearButtons button")
+          .forEach((btn) => btn.classList.remove("selected"));
+        event.target.classList.add("selected");
+        updateDayButtons();
+      }
+
+      function selectMonth(month) {
+        selectedMonth = month;
+        document
+          .querySelectorAll("#monthButtons button")
+          .forEach((btn) => btn.classList.remove("selected"));
+        event.target.classList.add("selected");
+        updateDayButtons();
+      }
+
+      function selectDay(day) {
+        selectedDay = day.toString().padStart(2, "0");
+        document
+          .querySelectorAll("#dayButtons button")
+          .forEach((btn) => btn.classList.remove("selected"));
+        event.target.classList.add("selected");
+      }
+
+      function updateDayButtons() {
+        const dayButtonsContainer = document.getElementById("dayButtons");
+        dayButtonsContainer.innerHTML = "";
+        if (!selectedYear || !selectedMonth) return;
+        const totalDays = new Date(selectedYear, selectedMonth, 0).getDate();
+        for (let i = 1; i <= totalDays; i++) {
+          const btn = document.createElement("button");
+          btn.textContent = i;
+          btn.className = "day-btn";
+          btn.onclick = () => selectDay(i);
+          dayButtonsContainer.appendChild(btn);
+        }
+      }
+
+      function fetchAQIData() {
+        if (!selectedYear || !selectedMonth || !selectedDay) {
+          alert("Please select year, month, and day.");
+          return;
+        }
+
+        const finalDate = `${selectedYear}-${selectedMonth
+          .toString()
+          .padStart(2, "0")}-${selectedDay}`;
+
+        fetch(`/get_hourly_aqi?date=${finalDate}&city=${selectedCity}`)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.error) {
+              alert(data.error);
+              return;
+            }
+            drawAQIChart(data.hours, data.aqi_values, finalDate);
+          })
+          .catch((err) => console.error("Error:", err));
+      }
+
+      function drawAQIChart(labels, data, selectedDate) {
+        const ctx = document.getElementById("aqiChart").getContext("2d");
+        if (chart) chart.destroy();
+
+        chart = new Chart(ctx, {
+          type: "line",
+          data: {
+            labels: labels.map((h) => `${h}:00`),
+            datasets: [
+              {
+                label: "Hourly AQI",
+                data,
+                borderColor: "#3B82F6",
+                backgroundColor: "#3B82F633",
+                borderWidth: 2,
+                fill: true,
+                tension: 0.3,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            plugins: { legend: { labels: { color: "#374151" } } },
+            onClick: (_, elements) => {
+              if (elements.length > 0) fetchParameterData(selectedDate);
+            },
+            scales: {
+              x: {
+                title: { display: true, text: "Hour of Day" },
+                ticks: { color: "#6B7280" },
+              },
+              y: {
+                title: { display: true, text: "Air Quality Index" },
+                beginAtZero: true,
+                ticks: { color: "#6B7280" },
+              },
+            },
+          },
+        });
+      }
+
+      function fetchParameterData(date) {
+        Promise.all([
+          fetch(`/parameter-data/${date}`).then((res) => res.json()),
+          fetch(`/temperature-humidity/${date}`).then((res) => res.json()),
+        ])
+          .then(([pollutantData, tempHumidityData]) => {
+            if (pollutantData.error || tempHumidityData.error) {
+              alert("No data available for this date.");
+              return;
+            }
+
+            drawParameterChart(pollutantData.labels, pollutantData.data);
+            drawTempHumidityChart(
+              tempHumidityData.labels,
+              tempHumidityData.data
+            );
+          })
+          .catch((err) => {
+            console.error("Error fetching data:", err);
+          });
+      }
+
+      function drawParameterChart(labels, data) {
+        const container = document.getElementById("paramChartContainer");
+        const ctx = document.getElementById("parameterChart").getContext("2d");
+
+        container.classList.remove("hidden");
+        if (parameterChart) parameterChart.destroy();
+
+        const colors = ["#EF4444", "#F59E0B", "#10B981", "#6366F1", "#8B5CF6"];
+
+        const datasets = Object.keys(data)
+          .filter((k) => !k.includes("Temperature") && !k.includes("Humidity"))
+          .map((param, index) => ({
+            label: param,
+            data: data[param],
+            borderColor: colors[index % colors.length],
+            backgroundColor: colors[index % colors.length] + "33",
+            borderWidth: 2,
+            fill: true,
+            tension: 0.3,
+          }));
+
+        parameterChart = new Chart(ctx, {
+          type: "line",
+          data: { labels: labels.map((h) => `${h}:00`), datasets },
+          options: {
+            responsive: true,
+            plugins: { legend: { display: true } },
+            scales: {
+              x: { title: { display: true, text: "Hour" } },
+              y: { title: { display: true, text: "Value" }, beginAtZero: true },
+            },
+          },
+        });
+      }
+
+    </script>
+  </body>
+</html>

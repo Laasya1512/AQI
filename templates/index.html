@@ -1,78 +1,867 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Hourly AQI Plot</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AQI Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-</head>
-<body>
-    <h2>Select a Date:</h2>
-    <input type="date" id="datePicker">
-    <button onclick="fetchAQIData()">Show AQI</button>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+    />
+    <style>
+      :root {
+        --primary-color: #3498db;
+        --secondary-color: #2ecc71;
+        --accent-color: #9b59b6;
+        --background-color: #f0f8ff;
+        --card-bg: rgba(255, 255, 255, 0.95);
+        --text-color: #2c3e50;
+        --border-radius: 16px;
+        --box-shadow: 0 8px 20px rgba(52, 152, 219, 0.15);
+        --gradient-bg: linear-gradient(135deg, #6dd5ed, #2193b0);
+      }
 
-    <canvas id="aqiChart" width="800" height="400"></canvas>
+      body {
+        background: var(--background-color);
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        color: var(--text-color);
+        background-image: url("https://images.unsplash.com/photo-1580193769210-b8d1c049a7d9?q=80&w=2000");
+        background-size: cover;
+        background-attachment: fixed;
+      }
+
+      .dashboard-header {
+        background: var(--gradient-bg);
+        padding: 20px;
+        border-radius: var(--border-radius);
+        margin-bottom: 20px;
+        color: white;
+        text-align: center;
+        box-shadow: var(--box-shadow);
+      }
+
+      .dashboard-header h2 {
+        margin: 0;
+        font-weight: 700;
+        letter-spacing: 1px;
+      }
+
+      .card {
+        border-radius: var(--border-radius);
+        box-shadow: var(--box-shadow);
+        border: none;
+        background: var(--card-bg);
+        margin-bottom: 20px;
+        transition: transform 0.3s ease;
+      }
+
+      .card:hover {
+        transform: translateY(-5px);
+      }
+
+      .card-header {
+        background: transparent;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        padding: 15px 20px;
+        font-weight: 600;
+      }
+
+      #map {
+        height: 300px;
+        border-radius: var(--border-radius);
+        box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .date-selector {
+        border-radius: var(--border-radius);
+        padding: 15px;
+        background: var(--card-bg);
+        box-shadow: var(--box-shadow);
+      }
+
+      .date-btn-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        margin-top: 10px;
+      }
+
+      .date-btn {
+        padding: 8px 16px;
+        font-size: 14px;
+        cursor: pointer;
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        border-radius: 30px;
+        transition: all 0.2s ease;
+      }
+
+      .date-btn:hover {
+        background: var(--primary-color);
+        color: white;
+      }
+
+      .date-btn.active {
+        background: var(--primary-color);
+        color: white;
+        font-weight: 600;
+      }
+
+      .city-btn {
+        margin: 4px;
+        padding: 8px 16px;
+        border-radius: 30px;
+        font-size: 14px;
+        background: white;
+        color: var(--text-color);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        transition: all 0.2s ease;
+      }
+
+      .city-btn:hover,
+      .city-btn.active {
+        background: var(--secondary-color);
+        color: white;
+        border-color: var(--secondary-color);
+      }
+
+      .btn-primary {
+        background: var(--primary-color);
+        border-color: var(--primary-color);
+        border-radius: 30px;
+        padding: 10px 25px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+      }
+
+      .btn-primary:hover {
+        background: var(--accent-color);
+        border-color: var(--accent-color);
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(155, 89, 182, 0.4);
+      }
+
+      .chart-container {
+        position: relative;
+        height: 300px;
+        width: 100%;
+      }
+
+      .report-card {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: var(--border-radius);
+        padding: 25px;
+        margin-top: 30px;
+        box-shadow: var(--box-shadow);
+        position: relative;
+        transition: all 0.3s ease;
+      }
+
+      .report-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 12px 25px rgba(52, 152, 219, 0.2);
+      }
+
+      .report-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 15px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        padding-bottom: 15px;
+      }
+
+      .report-icon {
+        font-size: 24px;
+        margin-right: 15px;
+        color: var(--primary-color);
+        background: rgba(52, 152, 219, 0.1);
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .report-content {
+        line-height: 1.7;
+        font-size: 16px;
+      }
+
+      .report-summary {
+        border-radius: 8px;
+        margin-bottom: 20px;
+      }
+
+      .report-metrics .metric-card {
+        transition: all 0.3s ease;
+      }
+
+      .report-metrics .metric-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+      }
+
+      .report-recommendations {
+        border-radius: 8px;
+        margin-top: 20px;
+      }
+
+      .report-recommendations ul li {
+        margin-bottom: 8px;
+      }
+
+      .loading {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 300px;
+      }
+
+      .loading-spinner {
+        width: 50px;
+        height: 50px;
+        border: 5px solid rgba(0, 0, 0, 0.1);
+        border-top-color: var(--primary-color);
+        border-radius: 50%;
+        animation: spin 1s ease-in-out infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @media (max-width: 768px) {
+        .date-btn {
+          padding: 6px 12px;
+          font-size: 12px;
+        }
+      }
+
+      .aqi-indicator {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 20px;
+      }
+
+      .aqi-level {
+        flex: 1;
+        text-align: center;
+        padding: 8px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .aqi-good {
+        background-color: #a8e6cf;
+        color: #1d6b42;
+      }
+      .aqi-moderate {
+        background-color: #dcedc1;
+        color: #7c8b50;
+      }
+      .aqi-unhealthy-sensitive {
+        background-color: #ffd3b6;
+        color: #9c5221;
+      }
+      .aqi-unhealthy {
+        background-color: #ffaaa5;
+        color: #8a2e29;
+      }
+      .aqi-very-unhealthy {
+        background-color: #ff8b94;
+        color: #7a1c24;
+      }
+      .aqi-hazardous {
+        background-color: #d291bc;
+        color: #641e4a;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container py-4">
+      <div class="dashboard-header">
+        <h2><i class="fas fa-wind"></i> Air Quality Index Dashboard</h2>
+        <p class="mb-0">
+          Monitoring and analyzing air quality metrics for healthier cities
+        </p>
+      </div>
+
+      <div class="row">
+        <!-- Left Section (1/3) -->
+        <div class="col-lg-4">
+          <!-- Map Card -->
+          <div class="card mb-4">
+            <div class="card-header">
+              <i class="fas fa-map-marker-alt me-2"></i> Location
+            </div>
+            <div class="card-body">
+              <div id="map"></div>
+              <div class="mt-3">
+                <h6 class="mb-2">Select a City</h6>
+                <div id="cityButtons" class="d-flex flex-wrap"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Date Selector Card -->
+          <div class="card">
+            <div class="card-header">
+              <i class="fas fa-calendar-alt me-2"></i> Date Selection
+            </div>
+            <div class="card-body">
+              <!-- Year Selector -->
+              <div class="mb-3">
+                <h6 class="mb-2">Year</h6>
+                <div id="yearButtons" class="date-btn-container"></div>
+              </div>
+
+              <!-- Month Selector -->
+              <div class="mb-3">
+                <h6 class="mb-2">Month</h6>
+                <div id="monthButtons" class="date-btn-container"></div>
+              </div>
+
+              <!-- Day Selector -->
+              <div class="mb-3">
+                <h6 class="mb-2">Day</h6>
+                <div id="dayButtons" class="date-btn-container"></div>
+              </div>
+
+              <div class="d-grid gap-2 mt-4">
+                <button class="btn btn-primary" id="generateReport">
+                  <i class="fas fa-chart-line me-2"></i> Generate Analysis
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Section (2/3) -->
+        <div class="col-lg-8">
+          <!-- AQI Chart Card -->
+          <div class="card mb-4">
+            <div
+              class="card-header d-flex justify-content-between align-items-center"
+            >
+              <div>
+                <i class="fas fa-chart-area me-2"></i>
+                Hourly Air Quality Index
+              </div>
+              <div
+                id="selectedDateDisplay"
+                class="badge bg-primary px-3 py-2"
+              ></div>
+            </div>
+            <div class="card-body">
+              <div class="chart-container">
+                <canvas id="aqiChart"></canvas>
+              </div>
+
+              <div class="aqi-indicator mt-3">
+                <div class="aqi-level aqi-good">Good<br />0-50</div>
+                <div class="aqi-level aqi-moderate">Moderate<br />51-100</div>
+                <div class="aqi-level aqi-unhealthy-sensitive">
+                  Unhealthy for Sensitive<br />101-150
+                </div>
+                <div class="aqi-level aqi-unhealthy">
+                  Unhealthy<br />151-200
+                </div>
+                <div class="aqi-level aqi-very-unhealthy">
+                  Very Unhealthy<br />201-300
+                </div>
+                <div class="aqi-level aqi-hazardous">Hazardous<br />301+</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pollutants Chart Card -->
+          <div class="card mb-4">
+            <div class="card-header">
+              <i class="fas fa-flask me-2"></i> Pollutant Concentration
+            </div>
+            <div class="card-body">
+              <div class="chart-container">
+                <canvas id="pollutantsChart"></canvas>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Report Section -->
+          <div id="reportSection" class="report-card d-none">
+            <div class="report-header">
+              <div class="report-icon">
+                <i class="fas fa-file-alt"></i>
+              </div>
+              <h4 class="mb-0">Air Quality Analysis Report</h4>
+            </div>
+            <div class="report-content" id="reportText"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
 
     <script>
-        let chart;
+      // Cities data
+      const cities = {
+        Pune: [18.5204, 73.8567],
+        Delhi: [28.6139, 77.209],
+        Mumbai: [19.076, 72.8777],
+        Bengaluru: [12.9716, 77.5946],
+        Chennai: [13.0827, 80.2707],
+        Kolkata: [22.5726, 88.3639],
+        Hyderabad: [17.385, 78.4867],
+        Ahmedabad: [23.0225, 72.5714],
+        Jaipur: [26.9124, 75.7873],
+        Lucknow: [26.8467, 80.9462],
+      };
 
-        function fetchAQIData() {
-            const selectedDate = document.getElementById("datePicker").value;
-            if (!selectedDate) {
-                alert("Please select a date!");
-                return;
+      // Map initialization
+      const map = L.map("map").setView(cities["Pune"], 11);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution:
+          'Map data © <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
+      }).addTo(map);
+
+      let marker = L.marker(cities["Pune"]).addTo(map);
+      let activeCity = "Pune";
+
+      // City buttons
+      const cityButtons = document.getElementById("cityButtons");
+      for (const city in cities) {
+        const btn = document.createElement("button");
+        btn.innerText = city;
+        btn.className = "btn city-btn " + (city === "Pune" ? "active" : "");
+        btn.onclick = () => {
+          document
+            .querySelectorAll(".city-btn")
+            .forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          activeCity = city;
+          const coords = cities[city];
+          map.setView(coords, 11);
+          marker.setLatLng(coords);
+        };
+        cityButtons.appendChild(btn);
+      }
+
+      // Chart initialization
+      const aqiCtx = document.getElementById("aqiChart").getContext("2d");
+      const pollutantsCtx = document
+        .getElementById("pollutantsChart")
+        .getContext("2d");
+
+      let aqiChart = new Chart(aqiCtx, {
+        type: "line",
+        data: { 
+          labels: Array.from({length: 24}, (_, i) => i), 
+          datasets: [{
+            label: 'Air Quality Index',
+            data: Array(24).fill(null),
+            borderColor: '#3498db',
+            backgroundColor: 'rgba(52, 152, 219, 0.1)',
+            tension: 0.4,
+            fill: true
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: true },
+            tooltip: {
+              backgroundColor: "rgba(255, 255, 255, 0.9)",
+              titleColor: "#333",
+              bodyColor: "#333",
+              borderColor: "#ddd",
+              borderWidth: 1,
+              cornerRadius: 10,
+              padding: 10,
+              displayColors: false,
+            },
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              grid: {
+                color: "rgba(0, 0, 0, 0.05)",
+              },
+            },
+            x: {
+              grid: {
+                display: false,
+              },
+            },
+          },
+        },
+      });
+
+      let pollutantsChart = new Chart(pollutantsCtx, {
+        type: "line",
+        data: { 
+          labels: Array.from({length: 24}, (_, i) => i), 
+          datasets: [
+            {
+              label: 'PM2.5',
+              data: Array(24).fill(null),
+              borderColor: '#2ecc71',
+              backgroundColor: 'rgba(46, 204, 113, 0.1)',
+              tension: 0.4
+            },
+            {
+              label: 'PM10',
+              data: Array(24).fill(null),
+              borderColor: '#9b59b6',
+              backgroundColor: 'rgba(155, 89, 182, 0.1)',
+              tension: 0.4
+            },
+            {
+              label: 'NO2',
+              data: Array(24).fill(null),
+              borderColor: '#e74c3c',
+              backgroundColor: 'rgba(231, 76, 60, 0.1)',
+              tension: 0.4
+            },
+            {
+              label: 'SO2',
+              data: Array(24).fill(null),
+              borderColor: '#f39c12',
+              backgroundColor: 'rgba(243, 156, 18, 0.1)',
+              tension: 0.4
             }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: true },
+            tooltip: {
+              backgroundColor: "rgba(255, 255, 255, 0.9)",
+              titleColor: "#333",
+              bodyColor: "#333",
+              borderColor: "#ddd",
+              borderWidth: 1,
+              cornerRadius: 10,
+              padding: 10,
+            },
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              grid: {
+                color: "rgba(0, 0, 0, 0.05)",
+              },
+            },
+            x: {
+              grid: {
+                display: false,
+              },
+            },
+          },
+        },
+      });
 
-            fetch(`/get_hourly_aqi?date=${selectedDate}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        alert(data.error);
-                        return;
-                    }
+      // Date selection variables
+      let selectedYear = null;
+      let selectedMonth = null;
+      let selectedDay = null;
+      let availableDates = {};
 
-                    drawChart(data.hours, data.aqi_values);
-                })
-                .catch(error => console.error('Error:', error));
+      // Function to fetch available dates
+      async function fetchAvailableDates() {
+        try {
+          const response = await fetch("/get-available-dates");
+          availableDates = await response.json();
+
+          // Populate year buttons
+          const yearButtons = document.getElementById("yearButtons");
+          yearButtons.innerHTML = "";
+
+          availableDates.years.forEach((year) => {
+            const btn = document.createElement("button");
+            btn.innerText = year;
+            btn.className = "date-btn year-btn";
+            btn.onclick = () => selectYear(year);
+            yearButtons.appendChild(btn);
+          });
+
+          // Select the most recent year by default
+          if (availableDates.years.length > 0) {
+            selectYear(availableDates.years[availableDates.years.length - 1]);
+          }
+        } catch (error) {
+          console.error("Error fetching available dates:", error);
+          // Create mock data if API fails
+          mockAvailableDates();
+        }
+      }
+
+      // Add this new function to create mock data
+      function mockAvailableDates() {
+        console.log("Using mock data for testing");
+        availableDates = {
+          years: [2021, 2022],
+          months_by_year: {
+            2021: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+            2022: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+          },
+          days_by_year_month: {
+            2021: {
+              1: Array.from({length: 31}, (_, i) => i + 1),
+              2: Array.from({length: 28}, (_, i) => i + 1),
+              3: Array.from({length: 31}, (_, i) => i + 1),
+              4: Array.from({length: 30}, (_, i) => i + 1),
+              5: Array.from({length: 31}, (_, i) => i + 1),
+              6: Array.from({length: 30}, (_, i) => i + 1),
+              7: Array.from({length: 31}, (_, i) => i + 1),
+              8: Array.from({length: 31}, (_, i) => i + 1),
+              9: Array.from({length: 30}, (_, i) => i + 1),
+              10: Array.from({length: 31}, (_, i) => i + 1),
+              11: Array.from({length: 30}, (_, i) => i + 1),
+              12: Array.from({length: 31}, (_, i) => i + 1)
+            },
+            2022: {
+              1: Array.from({length: 31}, (_, i) => i + 1),
+              2: Array.from({length: 28}, (_, i) => i + 1),
+              3: Array.from({length: 31}, (_, i) => i + 1),
+              4: Array.from({length: 30}, (_, i) => i + 1),
+              5: Array.from({length: 31}, (_, i) => i + 1),
+              6: Array.from({length: 30}, (_, i) => i + 1),
+              7: Array.from({length: 31}, (_, i) => i + 1),
+              8: Array.from({length: 31}, (_, i) => i + 1),
+              9: Array.from({length: 30}, (_, i) => i + 1),
+              10: Array.from({length: 31}, (_, i) => i + 1),
+              11: Array.from({length: 30}, (_, i) => i + 1),
+              12: Array.from({length: 31}, (_, i) => i + 1)
+            }
+          }
+        };
+        
+        // Populate year buttons
+        const yearButtons = document.getElementById("yearButtons");
+        yearButtons.innerHTML = "";
+
+        availableDates.years.forEach((year) => {
+          const btn = document.createElement("button");
+          btn.innerText = year;
+          btn.className = "date-btn year-btn";
+          btn.onclick = () => selectYear(year);
+          yearButtons.appendChild(btn);
+        });
+
+        // Select the most recent year by default
+        selectYear(availableDates.years[availableDates.years.length - 1]);
+      }
+
+      // Function to select year
+      function selectYear(year) {
+        selectedYear = year;
+        selectedMonth = null;
+        selectedDay = null;
+
+        // Update UI
+        document.querySelectorAll(".year-btn").forEach((btn) => {
+          btn.classList.toggle("active", btn.innerText == year);
+        });
+
+        // Populate month buttons
+        const monthButtons = document.getElementById("monthButtons");
+        monthButtons.innerHTML = "";
+
+        const monthNames = [
+          "Jan",
+          "Feb",
+          "Mar",
+          "Apr",
+          "May",
+          "Jun",
+          "Jul",
+          "Aug",
+          "Sep",
+          "Oct",
+          "Nov",
+          "Dec",
+        ];
+
+        availableDates.months_by_year[year].forEach((month) => {
+          const btn = document.createElement("button");
+          btn.innerText = monthNames[month - 1];
+          btn.dataset.month = month;
+          btn.className = "date-btn month-btn";
+          btn.onclick = () => selectMonth(month);
+          monthButtons.appendChild(btn);
+        });
+
+        // Clear day buttons
+        document.getElementById("dayButtons").innerHTML = "";
+        updateSelectedDateDisplay();
+      }
+
+      // Function to select month
+      function selectMonth(month) {
+        selectedMonth = month;
+        selectedDay = null;
+
+        // Update UI
+        document.querySelectorAll(".month-btn").forEach((btn) => {
+          btn.classList.toggle("active", btn.dataset.month == month);
+        });
+
+        // Populate day buttons
+        const dayButtons = document.getElementById("dayButtons");
+        dayButtons.innerHTML = "";
+
+        availableDates.days_by_year_month[selectedYear][month].forEach(
+          (day) => {
+            const btn = document.createElement("button");
+            btn.innerText = day;
+            btn.className = "date-btn day-btn";
+            btn.onclick = () => selectDay(day);
+            dayButtons.appendChild(btn);
+          }
+        );
+
+        updateSelectedDateDisplay();
+      }
+
+      // Function to select day
+      function selectDay(day) {
+        selectedDay = day;
+
+        // Update UI
+        document.querySelectorAll(".day-btn").forEach((btn) => {
+          btn.classList.toggle("active", btn.innerText == day);
+        });
+
+        updateSelectedDateDisplay();
+        
+        // Update charts with mock data when a day is selected
+        updateChartsWithMockData();
+      }
+
+      // Add this function after the selectDay function
+      function updateChartsWithMockData() {
+        // Generate random AQI data
+        const hours = Array.from({length: 24}, (_, i) => i);
+        const aqiValues = hours.map(() => Math.floor(Math.random() * 200) + 20);
+        
+        // Update AQI chart
+        aqiChart.data.labels = hours;
+        aqiChart.data.datasets[0].data = aqiValues;
+        aqiChart.update();
+        
+        // Generate random pollutant data
+        const pm25Values = hours.map(() => Math.floor(Math.random() * 80) + 10);
+        const pm10Values = hours.map(() => Math.floor(Math.random() * 120) + 20);
+        const no2Values = hours.map(() => Math.floor(Math.random() * 60) + 5);
+        const so2Values = hours.map(() => Math.floor(Math.random() * 30) + 2);
+        
+        // Update pollutants chart
+        pollutantsChart.data.labels = hours;
+        pollutantsChart.data.datasets[0].data = pm25Values;
+        pollutantsChart.data.datasets[1].data = pm10Values;
+        pollutantsChart.data.datasets[2].data = no2Values;
+        pollutantsChart.data.datasets[3].data = so2Values;
+        pollutantsChart.update();
+      }
+
+      // Function to update selected date display
+      function updateSelectedDateDisplay() {
+        const displayElement = document.getElementById("selectedDateDisplay");
+
+        if (selectedYear && selectedMonth && selectedDay) {
+          const monthNames = [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+          ];
+
+          displayElement.textContent = `${
+            monthNames[selectedMonth - 1]
+          } ${selectedDay}, ${selectedYear}`;
+          displayElement.classList.remove("d-none");
+        } else {
+          displayElement.classList.add("d-none");
+        }
+      }
+
+      // Function to format date for API
+      function getFormattedDate() {
+        if (!selectedYear || !selectedMonth || !selectedDay) return null;
+        return `${selectedYear}-${String(selectedMonth).padStart(
+          2,
+          "0"
+        )}-${String(selectedDay).padStart(2, "0")}`;
+      }
+
+      // Function to generate AQI report
+      async function generateReport() {
+        const formattedDate = getFormattedDate();
+        if (!formattedDate) {
+          alert("Please select a valid date.");
+          return;
         }
 
-        function drawChart(labels, data) {
-            const ctx = document.getElementById('aqiChart').getContext('2d');
+        try {
+          // Show loading state
+          const reportSection = document.getElementById("reportSection");
+          const reportText = document.getElementById("reportText");
+          reportSection.classList.remove("d-none");
+          reportText.innerHTML = '<div class="loading"><div class="loading-spinner"></div></div>';
 
-            if (chart) {
-                chart.destroy();
-            }
+          const response = await fetch(
+            `/generate-report?city=${activeCity}&date=${formattedDate}`
+          );
+          const data = await response.json();
 
-            chart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels.map(h => `${h}:00`),
-                    datasets: [{
-                        label: 'Hourly AQI',
-                        data: data,
-                        borderColor: 'rgba(255, 99, 132, 1)',
-                        borderWidth: 2,
-                        fill: false
-                    }]
-                },
-                options: {
-                    scales: {
-                        x: {
-                            title: {
-                                display: true,
-                                text: 'Hour of Day'
-                            }
-                        },
-                        y: {
-                            title: {
-                                display: true,
-                                text: 'Air Quality Index'
-                            },
-                            beginAtZero: true
-                        }
-                    }
-                }
-            });
+          // Populate the report - now using innerHTML to render HTML content
+          reportText.innerHTML = data.report || "No data available for this date.";
+          
+        } catch (error) {
+          console.error("Error generating report:", error);
+          // Show error message in report section
+          const reportSection = document.getElementById("reportSection");
+          const reportText = document.getElementById("reportText");
+          reportSection.classList.remove("d-none");
+          reportText.innerHTML = `
+            <div class="alert alert-danger">
+              <i class="fas fa-exclamation-triangle me-2"></i>
+              Failed to generate report. Please try again later.
+            </div>`;
         }
+      }
+
+      // Event listener for report generation
+      document
+        .getElementById("generateReport")
+        .addEventListener("click", generateReport);
+
+      // Initialize available dates on page load
+      fetchAvailableDates();
     </script>
-</body>
+  </body>
 </html>
+
